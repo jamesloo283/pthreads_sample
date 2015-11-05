@@ -15,7 +15,7 @@ LDFLAGS += $(foreach lib,$(p_LIBRARIES),-l$(lib))
 all: $(p_NAME)
 
 $(p_NAME): $(p_OBJS)
-	$(LINK.c) $(p_OBJS) -pthread -g -o $(p_NAME)
+	$(LINK.c) $(p_OBJS) -pthread -lrt -g -o $(p_NAME)
 
 clean:
 	@- $(RM) $(p_NAME)
