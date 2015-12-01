@@ -1,5 +1,12 @@
 #pragma once
 
-#define CLIPORT		0x0
+#define DBGCLIPORT		6000
+#define SIMULMAXCONN			1
 
-void *sensor_dbgcli_thr(void *arg);
+typedef struct {
+	char *cmd;
+	int (*func)(void*);
+} clicmds;
+
+void dbgcli_init(void);
+void dbgcli_deinit(void);
