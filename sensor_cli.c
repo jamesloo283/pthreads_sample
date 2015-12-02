@@ -17,7 +17,7 @@ static int cli_exit(void *arg);
 
 static int
 cli_exit(void *arg) {
-	return 0;
+	return -1;
 }
 
 static int
@@ -34,6 +34,9 @@ clicmds cmdtab[] = {
 	{ "set", sen_set },
 	{ "get", sen_get },
 	{ "exit", cli_exit },
+	{ "quit", cli_exit },
+	{ "bye", cli_exit },
+	{ "q", cli_exit },
 };
 int cmdtab_size = sizeof(cmdtab) / sizeof(cmdtab[0]);
 
@@ -41,24 +44,20 @@ static int
 sens_dbgcli_handler(FILE *cliout, char *msg, int len)
 {
 	int arg;
-	if (0 == len) {
+	if (0 == len || 2 == len) {
 		return 0;
 	}
+
+	msg[len - 2] = '\0';
 
 	int i;
 	for (i = 0; i < cmdtab_size; ++i) {
 		if (!strncmp(cmdtab[i].cmd, msg, len)) {
-			break;
+			return cmdtab[i].func((void*)&arg);
 		}
 	}
 
-	if (i == cmdtab_size) {
-		fprintf(cliout, "%s: NOT FOUND\n", msg);
-		return 0;
-	}
-
-	fprintf(cliout, "%s entry called", cmdtab[i].cmd);
-	cmdtab[i].func((void*)&arg);
+	fprintf(cliout, "Invalid command '%s'\n", msg);
 	return 0;
 }
 
@@ -138,7 +137,7 @@ sens_dbgcli_thr(void *arg)
 			fprintf(clicon, "%s", prompt);
 			(void)fflush(clicon);
 			nrcv = getline(&rcvbuf, &len, clicon);
-			ret = sens_dbgcli_handler(clicon, rcvbuf, len);
+			ret = sens_dbgcli_handler(clicon, rcvbuf, nrcv);
 			free(rcvbuf);
 			if (0 > ret) {
 				break;

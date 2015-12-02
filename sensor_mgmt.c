@@ -15,7 +15,7 @@
  * * ps -L -o pid,lwp,pri,psr,nice,start,stat,bsdtime,cmd,comm -C sensormgmt
  *
  * * kill -l: lists avilable signals
- * * kill SIGTERM pid: to stop the process
+ * * kill -s SIGTERM pid: to stop the process
  */
 
 static void sigterm_hdl(int sig, siginfo_t *siginfo, void *ctx);
@@ -32,7 +32,6 @@ sigterm_hdl(int sig, siginfo_t *siginfo, void *ctx)
 	termsig = 1;
 	/* to do: enable and raise default handler for proper clean up */
 }
-
 
 /*
  * see following man pages for details:
