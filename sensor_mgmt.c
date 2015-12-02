@@ -63,6 +63,11 @@ sigs_init(void)
 		perror ("sigaction(..., SIGINT, ...)");
 		exit(1);
 	}
+
+	if (sigaction(SIGHUP, &act, NULL) < 0) {
+		perror ("sigaction(..., SIGHUP, ...)");
+		exit(1);
+	}
 }
 
 int
