@@ -48,6 +48,7 @@ sens_dbgcli_handler(FILE *cliout, char *msg, int len)
 		return 0;
 	}
 
+	/* get rid of newline and carriage return from cli */
 	msg[len - 2] = '\0';
 
 	int i;
@@ -75,11 +76,11 @@ sens_dbgcli_thr(void *arg)
 	int optval = 1;
 	/* reuse port/address */
 	ret = setsockopt(sfd,
-						  SOL_SOCKET,
-						  //SO_REUSEPORT | SO_REUSEADDR,
-						  SO_REUSEADDR,
-						  &optval,
-						  sizeof(optval));
+			 SOL_SOCKET,
+			 //SO_REUSEPORT | SO_REUSEADDR,
+			 SO_REUSEADDR,
+			 &optval,
+			 sizeof(optval));
 	if (-1 == ret) {
 		perror("setsockopt(...,SO_REUSEPORT | SO_REUSEADDR,...)");
 		exit(1);
@@ -91,10 +92,10 @@ sens_dbgcli_thr(void *arg)
 	ling.l_onoff = 1;
 	ling.l_linger = 10;
 	ret = setsockopt(sfd,
-						  SOL_SOCKET,
-						  SO_LINGER,
-						  (const char *)&ling,
-						  sizeof(ling));
+			 SOL_SOCKET,
+			 SO_LINGER,
+			 (const char *)&ling,
+			 sizeof(ling));
 	if (-1 == ret) {
 		perror("setsockopt(...,SO_LINGER,...)");
 		exit(1);
@@ -124,7 +125,8 @@ sens_dbgcli_thr(void *arg)
 
 		struct sockaddr_in cliaddr;
 		socklen_t clilen = sizeof(cliaddr);
-		int clih = accept(sfd, (struct sockaddr *)&cliaddr, &clilen);
+		int clih;
+		clih  = accept(sfd, (struct sockaddr *)&cliaddr, &clilen);
 		if (-1 == clih) {
 			perror("accept(...)");
 			exit(1);
@@ -156,9 +158,9 @@ dbgcli_init(void)
 {
 	int ret;
 	ret = pthread_create(&dbg_cli_thr,
-								NULL,
-								sens_dbgcli_thr,
-								NULL);
+			     NULL,
+			     sens_dbgcli_thr,
+			     NULL);
 	if (ret) {
 		printf("ERROR: creating dbg cli, ret: %d\n", ret);
 		exit(-1);

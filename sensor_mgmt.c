@@ -39,8 +39,8 @@ sigusr1_hdl(int sig, siginfo_t *siginfo, void *ctx)
 		uctx = ctx;
 	}
 	printf("Sending PID: %ld, UID: %ld\n",
-			(long)siginfo->si_pid,
-			(long)siginfo->si_uid);
+		(long)siginfo->si_pid,
+		(long)siginfo->si_uid);
 	printf("SIGUSR1 received\n");
 }
 
@@ -52,8 +52,8 @@ sigusr2_hdl(int sig, siginfo_t *siginfo, void *ctx)
 		uctx = ctx;
 	}
 	printf("Sending PID: %ld, UID: %ld\n",
-			(long)siginfo->si_pid,
-			(long)siginfo->si_uid);
+		(long)siginfo->si_pid,
+		(long)siginfo->si_uid);
 	printf("SIGUSR2 received\n");
 }
 
@@ -65,8 +65,8 @@ sigintr_hdl(int sig, siginfo_t *siginfo, void *ctx)
 		uctx = ctx;
 	}
 	printf("Sending PID: %ld, UID: %ld\n",
-			(long)siginfo->si_pid,
-			(long)siginfo->si_uid);
+		(long)siginfo->si_pid,
+		(long)siginfo->si_uid);
 	printf("SIGINTR received\n");
 }
 
@@ -78,8 +78,8 @@ sigterm_hdl(int sig, siginfo_t *siginfo, void *ctx)
 		uctx = ctx;
 	}
 	printf("Sending PID: %ld, UID: %ld\n",
-			(long)siginfo->si_pid,
-			(long)siginfo->si_uid);
+		(long)siginfo->si_pid,
+		(long)siginfo->si_uid);
 	termsig = 1;
 }
 

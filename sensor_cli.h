@@ -1,7 +1,7 @@
 #pragma once
 
 #define DBGCLIPORT		6000
-#define SIMULMAXCONN			1
+#define SIMULMAXCONN		1
 
 typedef struct {
 	char *cmd;
