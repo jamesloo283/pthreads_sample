@@ -12,8 +12,8 @@ static void
 	sens_t *s = arg;
 	while (1) {
 		printf("I'm a sonar sensor, idx: %d, t: %li\n",
-				s->tnum,
-				(unsigned long int)s->t);
+			s->tnum,
+			(unsigned long int)s->t);
 		sleep(10);
 	}
 	pthread_exit(0);
@@ -25,8 +25,8 @@ static void
 	sens_t *s = arg;
 	while (1) {
 		printf("I'm a speed sensor, id: %d, t: %li\n",
-				s->tnum,
-				(unsigned long int)s->t);
+			s->tnum,
+			(unsigned long int)s->t);
 		sleep(12);
 	}
 	pthread_exit(0);
@@ -38,8 +38,8 @@ static void
 	sens_t *s = arg;
 	while (1) {
 		printf("I'm IR sensor, id: %d, t: %li\n",
-				s->tnum,
-				(unsigned long int)s->t);
+			s->tnum,
+			(unsigned long int)s->t);
 		sleep(15);
 	}
 	pthread_exit(0);
@@ -58,9 +58,9 @@ sens_init(void) {
 	int ret;
 	for (i = 0; i < senscount; ++i) {
 		ret = pthread_create(&senstab[i].t,
-									NULL,
-									senstab[i].func,
-									(void*)(&senstab[i]));
+				     NULL,
+				     senstab[i].func,
+				     (void*)(&senstab[i]));
 		if (ret) {
 			printf("ERROR creating thread %d\n", i);
 		} else {
@@ -76,6 +76,6 @@ sens_deinit(void) {
 	for (i = 0; i < senscount; ++i) {
 		pthread_cancel(senstab[i].t);
 		pthread_join(senstab[i].t, &ret);
-		printf("Thread %d completed\n", senstab[i].tnum);
+		printf("Thread %d exit\n", senstab[i].tnum);
 	}
 }

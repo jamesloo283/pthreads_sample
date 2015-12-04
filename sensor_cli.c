@@ -175,5 +175,5 @@ dbgcli_deinit(void)
 	void *ret;
 	pthread_cancel(dbg_cli_thr);
 	pthread_join(dbg_cli_thr, &ret);
-	printf("dbgcli completed\n");
+	printf("dbgcli exit\n");
 }
