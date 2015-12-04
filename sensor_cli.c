@@ -3,9 +3,13 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/syscall.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "sensor_cli.h"
+
+/* to do: move it into common file */
+#define GETTID() (pid_t)syscall(SYS_gettid)
 
 static pthread_t dbg_cli_thr;
 
@@ -75,14 +79,17 @@ sens_dbgcli_thr(void *arg)
 	int ret;
 	int optval = 1;
 	/* reuse port/address */
-	ret = setsockopt(sfd,
-			 SOL_SOCKET,
-			 //SO_REUSEPORT | SO_REUSEADDR,
-			 SO_REUSEADDR,
-			 &optval,
-			 sizeof(optval));
-	if (-1 == ret) {
-		perror("setsockopt(...,SO_REUSEPORT | SO_REUSEADDR,...)");
+	if ( setsockopt(sfd,
+			SOL_SOCKET,
+			/*
+			 * SO_REUSEPORT doesn't seem to be portable, disable
+			 * for now
+			 */
+			//SO_REUSEPORT | SO_REUSEADDR,
+			SO_REUSEADDR,
+			&optval,
+			sizeof(optval)) ) {
+		perror("setsockopt(..., SO_REUSEADDR,...)");
 		exit(1);
 	}
 
@@ -90,14 +97,13 @@ sens_dbgcli_thr(void *arg)
 	struct linger ling;
 	memset(&ling, 0, sizeof(ling));
 	ling.l_onoff = 1;
-	ling.l_linger = 10;
-	ret = setsockopt(sfd,
-			 SOL_SOCKET,
-			 SO_LINGER,
-			 (const char *)&ling,
-			 sizeof(ling));
-	if (-1 == ret) {
-		perror("setsockopt(...,SO_LINGER,...)");
+	ling.l_linger = 2;
+	if ( setsockopt(sfd,
+			SOL_SOCKET,
+			SO_LINGER,
+			(const char *)&ling,
+			sizeof(ling)) ) {
+		perror("setsockopt(..., SO_LINGER,...)");
 		exit(1);
 	}
 
@@ -107,18 +113,16 @@ sens_dbgcli_thr(void *arg)
 	/* accept connection on any IP */
 	srvaddr.sin_addr.s_addr = INADDR_ANY;
 	srvaddr.sin_port = htons(DBGCLIPORT);
-	ret = bind(sfd, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
-	if (-1 == ret) {
+	if ( bind(sfd, (struct sockaddr *)&srvaddr, sizeof(srvaddr)) ) {
 		perror("bind(...)");
 		exit(1);
 	}
 
-	char prompt[16] = { };
+	char prompt[16];
 	snprintf(prompt, sizeof(prompt), "%s", "Hello >");
-	printf("CLI waiting for connection\n");
+	printf("CLI thread, TID: %d,  port: %d\n", GETTID(), DBGCLIPORT);
 	while (1) {
-		ret = listen(sfd, SIMULMAXCONN);
-		if (-1 == ret) {
+		if ( listen(sfd, SIMULMAXCONN) ) {
 			perror("listen(...)");
 			exit(1);
 		}
@@ -126,13 +130,18 @@ sens_dbgcli_thr(void *arg)
 		struct sockaddr_in cliaddr;
 		socklen_t clilen = sizeof(cliaddr);
 		int clih;
-		clih  = accept(sfd, (struct sockaddr *)&cliaddr, &clilen);
+		clih = accept(sfd, (struct sockaddr *)&cliaddr, &clilen);
 		if (-1 == clih) {
 			perror("accept(...)");
 			exit(1);
 		}
 
 		FILE *clicon = fdopen(clih, "w+");
+		if (!clicon) {
+			perror("fdopen(clih)");
+			exit(1);
+		}
+
 		while (1) {
 			int nrcv;
 			char *rcvbuf = NULL;
@@ -153,7 +162,7 @@ sens_dbgcli_thr(void *arg)
 	pthread_exit(0);
 }
 
-void
+int
 dbgcli_init(void)
 {
 	int ret;
@@ -162,11 +171,11 @@ dbgcli_init(void)
 			     sens_dbgcli_thr,
 			     NULL);
 	if (ret) {
-		printf("ERROR: creating dbg cli, ret: %d\n", ret);
-		exit(-1);
-	} else {
-		printf("dbg cli created\n");
+		perror("pthread_create(..., DBG CLI, ...)");
+		return -1;
 	}
+	(void)pthread_setname_np(dbg_cli_thr, "dbgcli");
+	return 0;
 }
 
 void
@@ -175,5 +184,5 @@ dbgcli_deinit(void)
 	void *ret;
 	pthread_cancel(dbg_cli_thr);
 	pthread_join(dbg_cli_thr, &ret);
-	printf("dbgcli exit\n");
+	printf("DBG CLI exit\n");
 }

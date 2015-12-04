@@ -1,6 +1,15 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #include "sensor_worker.h"
+
+/*
+ * gettid(...) isn't portable and isn't implemented on every platform
+ * so unfortunately, this has to be done via syscall
+ */
+#define GETTID() (pid_t)syscall(SYS_gettid)
 
 static void *sonar_thr(void *arg);
 static void *speed_thr(void *arg);
@@ -11,9 +20,12 @@ static void
 {
 	sens_t *s = arg;
 	while (1) {
-		printf("I'm a sonar sensor, idx: %d, t: %li\n",
+		printf( "Sonar thread, idx: %d,"
+			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
-			(unsigned long int)s->t);
+			s->t,
+			GETTID(),
+			getpid() );
 		sleep(10);
 	}
 	pthread_exit(0);
@@ -24,9 +36,12 @@ static void
 {
 	sens_t *s = arg;
 	while (1) {
-		printf("I'm a speed sensor, id: %d, t: %li\n",
+		printf( "Speed thread, idx: %d,"
+			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
-			(unsigned long int)s->t);
+			s->t,
+			GETTID(),
+			getpid() );
 		sleep(12);
 	}
 	pthread_exit(0);
@@ -37,36 +52,43 @@ static void
 {
 	sens_t *s = arg;
 	while (1) {
-		printf("I'm IR sensor, id: %d, t: %li\n",
+		printf( "IR thread, idx: %d,"
+			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
-			(unsigned long int)s->t);
-		sleep(15);
+			s->t,
+			GETTID(),
+			getpid() );
+		sleep(14);
 	}
 	pthread_exit(0);
 }
 
 sens_t senstab[] = {
-	{ 0xFEFEFEFE, 0, SONAR_SENS, sonar_thr },
-	{ 0xFEFEFEFE, 1, SPEED_SENS, speed_thr },
-	{ 0xFEFEFEFE, 2, IR_SENS, ir_thr },
+	/* first member t will get assigned after thread creation */
+	{ "sonar_sens", 0xDEADBEEF, 0, SONAR_SENS, sonar_thr },
+	{ "speed_sens", 0xDEADBEEF, 1, SPEED_SENS, speed_thr },
+	{ "IR_sens", 0xDEADBEEF, 2, IR_SENS, ir_thr },
 };
 int senscount = sizeof(senstab) / sizeof(senstab[0]);
 
-void
+int
 sens_init(void) {
 	int i;
-	int ret;
+	int err = 0;
 	for (i = 0; i < senscount; ++i) {
-		ret = pthread_create(&senstab[i].t,
-				     NULL,
-				     senstab[i].func,
-				     (void*)(&senstab[i]));
-		if (ret) {
-			printf("ERROR creating thread %d\n", i);
+		if ( pthread_create(&senstab[i].t,
+				    NULL,
+				    senstab[i].func,
+				    (void*)(&senstab[i])) ) {
+			perror("pthread_create(...)\n");
+			printf("Sensor thread: %d)\n", senstab[i].tnum);
+			++err;
 		} else {
-			printf("Thread %d created\n", senstab[i].tnum);
+			(void)pthread_setname_np(senstab[i].t,
+						senstab[i].name);
 		}
 	}
+	return err;
 }
 
 void
@@ -76,6 +98,6 @@ sens_deinit(void) {
 	for (i = 0; i < senscount; ++i) {
 		pthread_cancel(senstab[i].t);
 		pthread_join(senstab[i].t, &ret);
-		printf("Thread %d exit\n", senstab[i].tnum);
+		printf("Sensor thread %d exit\n", senstab[i].tnum);
 	}
 }

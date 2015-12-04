@@ -8,5 +8,5 @@ typedef struct {
 	int (*func)(void*);
 } clicmds;
 
-void dbgcli_init(void);
+int dbgcli_init(void);
 void dbgcli_deinit(void);

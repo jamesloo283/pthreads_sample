@@ -5,10 +5,14 @@
 #include <pthread.h>
 #include <ucontext.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
 #include "sensor_mgmt.h"
 #include "sensor_worker.h"
 #include "sensor_cli.h"
 
+/* to do: move this into common header */
+#define GETTID() (pid_t)syscall(SYS_gettid)
 /*
  * multiple ways to see threads details:
  * * pstree -p `pidof sensormgmt`
@@ -19,7 +23,8 @@
  * * kill -s SIGTERM|SIGHUP|SIGINT pid: to stop the process
  */
 
-static void sigs_init(void);
+
+static int sigs_init(void);
 static void sigterm_hdl(int sig, siginfo_t *siginfo, void *ctx);
 static void sigusr1_hdl(int sig, siginfo_t *siginfo, void *ctx);
 static void sigusr2_hdl(int sig, siginfo_t *siginfo, void *ctx);
@@ -30,56 +35,60 @@ static void* sighdl_multithr(void *arg);
 static int termsig = 0;
 static int usr1sig = 0;
 static int usr2sig = 0;
+static int intsig = 0;	/* ctrl-C interrupt */
+static int intrsig = 0;	/* SIGSTOP follow by SIGCONT interrupt */
+static int sigwaitinfo_err = 0;
+static int sigmisshdl_err = 0;
 
 static void
 sigusr1_hdl(int sig, siginfo_t *siginfo, void *ctx)
 {
+#if 0
+	/* future use */
 	ucontext_t *uctx;
 	if (ctx) {
 		uctx = ctx;
 	}
-	printf("Sending PID: %ld, UID: %ld\n",
-		(long)siginfo->si_pid,
-		(long)siginfo->si_uid);
-	printf("SIGUSR1 received\n");
+#endif
+	++usr1sig;
 }
 
 static void
 sigusr2_hdl(int sig, siginfo_t *siginfo, void *ctx)
 {
+#if 0
+	/* future use */
 	ucontext_t *uctx;
 	if (ctx) {
 		uctx = ctx;
 	}
-	printf("Sending PID: %ld, UID: %ld\n",
-		(long)siginfo->si_pid,
-		(long)siginfo->si_uid);
-	printf("SIGUSR2 received\n");
+#endif
+	++usr2sig;
 }
 
 static void
 sigintr_hdl(int sig, siginfo_t *siginfo, void *ctx)
 {
+#if 0
+	/* future use */
 	ucontext_t *uctx;
 	if (ctx) {
 		uctx = ctx;
 	}
-	printf("Sending PID: %ld, UID: %ld\n",
-		(long)siginfo->si_pid,
-		(long)siginfo->si_uid);
-	printf("SIGINTR received\n");
+#endif
+	++intsig;
 }
 
 static void
 sigterm_hdl(int sig, siginfo_t *siginfo, void *ctx)
 {
+#if 0
+	/* future use */
 	ucontext_t *uctx;
 	if (ctx) {
 		uctx = ctx;
 	}
-	printf("Sending PID: %ld, UID: %ld\n",
-		(long)siginfo->si_pid,
-		(long)siginfo->si_uid);
+#endif
 	termsig = 1;
 }
 
@@ -89,21 +98,28 @@ sighdl_multithr(void *arg)
 	sigset_t s;
 	siginfo_t sf;
 	int sig;
+	printf("Signal handler: TID: %d, PID: %d\n", GETTID(), getpid());
 	while (1) {
-		/* include all sigs */
+		/* include all sigs and wait on them */
 		sigfillset(&s);
 		sig = sigwaitinfo(&s, &sf);
 		if (-1 == sig) {
-			perror("sigwaitinfo(...)");
+			/* due to SIGSTOP follow by SIGCONT */
 			if (EINTR == errno) {
 				sigintr_hdl(sig, &sf, NULL);
+				++intrsig;
+				continue;
+			} else {
+				perror("sigwaitinfo(...)");
+				++sigwaitinfo_err;
 			}
-			continue;
 		}
+
 		switch (sig) {
-		case SIGTERM: /* terminate */
-		case SIGHUP: /* hang up */
-		case SIGINT: /* interrupt from keyboard */
+		case SIGTERM:	/* terminate */
+		case SIGHUP:	/* hang up */
+		case SIGINT:	/* ctrl-C interrupt */
+			/* terminate for all these sigs */
 			sigterm_hdl(sig, &sf, NULL);
 			break;
 		case SIGUSR1:
@@ -112,30 +128,24 @@ sighdl_multithr(void *arg)
 		case SIGUSR2:
 			sigusr2_hdl(sig, &sf, NULL);
 			break;
-		/* note this (and SIGKILL) can't be caught or ignored */
-		case SIGSTOP:
-			break;
-		case SIGCONT:
-			break;
 		default:
 			printf("Miss-handled signal: %d: \n", sig);
+			++sigmisshdl_err;
 			break;
 		}
 	}
 }
 
-
-static void
+static int
 sigs_init(void)
 {
 	sigset_t allset;
-	/* include all sigs */
+	/* block all sigs initially */
 	sigfillset(&allset);
-	/* and block them initially */
 	int ret = pthread_sigmask(SIG_BLOCK, &allset, NULL);
 	if (ret) {
 		perror("pthread_sigmask(...)");
-		exit(1);
+		return -1;
 	}
 
 	/* create the signal handler thread */
@@ -143,7 +153,9 @@ sigs_init(void)
 	ret = pthread_create(&sigh_thr, NULL, &sighdl_multithr, NULL);
 	if (ret) {
 		perror("pthread_create(..., sighandler, ...)");
+		return -1;
 	}
+	(void)pthread_setname_np(sigh_thr, "sighdl");
 
 #if 0
 	/*
@@ -174,19 +186,30 @@ sigs_init(void)
 		exit(1);
 	}
 #endif
+	return 0;
 }
 
 int
 main(int argc, char **argv)
 {
-	sigs_init();
-	dbgcli_init();
-	sens_init();
+	if (sigs_init()) {
+		printf("Failed configuring signals, terminating\n");
+		exit(1);
+	}
+
+	if (dbgcli_init()) {
+		printf("Failed configuring DBG CLI, terminating\n");
+		exit(1);
+	}
+
+	if (sens_init()) {
+		printf("WARNING: one or more sensor threads failed\n");
+	}
 
 	/* main robotic logic */
 	while (!termsig) {
-		sleep(2);
-		printf("in main\n");
+		sleep(1);
+		/* do some work */
 	}
 
 	dbgcli_deinit();

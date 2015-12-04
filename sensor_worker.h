@@ -11,10 +11,11 @@
 #define	SONAR_SENS				0x0E0
 #define	IR_SENS					0x0F0
 
-void sens_init(void);
+int sens_init(void);
 void sens_deinit(void);
 
 typedef struct {
+	char *name;
 	pthread_t t;
 	int tnum;
 	int type;
