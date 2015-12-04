@@ -76,7 +76,8 @@ sens_dbgcli_thr(void *arg)
 	/* reuse port/address */
 	ret = setsockopt(sfd,
 						  SOL_SOCKET,
-						  SO_REUSEPORT | SO_REUSEADDR,
+						  //SO_REUSEPORT | SO_REUSEADDR,
+						  SO_REUSEADDR,
 						  &optval,
 						  sizeof(optval));
 	if (-1 == ret) {
