@@ -10,17 +10,22 @@
 #include "sensor_mgmt.h"
 #include "sensor_worker.h"
 #include "sensor_cli.h"
+#include "sensor_common.h"
 
-/* to do: move this into common header */
-#define GETTID() (pid_t)syscall(SYS_gettid)
 /*
  * multiple ways to see threads details:
  * * pstree -p `pidof sensormgmt`
  * * ps -aeT | grep sensormgmt
  * * ps -L -o pid,lwp,pri,psr,nice,start,stat,bsdtime,cmd,comm -C sensormgmt
+ * * ps H -C sensormgmt -o 'pid tid cmd comm'
  *
  * * kill -l: lists avilable signals
  * * kill -s SIGTERM|SIGHUP|SIGINT pid: to stop the process
+ *
+ * a few ways to see open files and ports
+ * * sudo lsof -i
+ * * sudo netstat -lptu
+ * * sudo netstat -tulpn
  */
 
 
@@ -155,7 +160,9 @@ sigs_init(void)
 		perror("pthread_create(..., sighandler, ...)");
 		return -1;
 	}
-	(void)pthread_setname_np(sigh_thr, "sighdl");
+	if ( pthread_setname_np(sigh_thr, "sighdl") ) {
+		perror("pthread_setname_np(..., sighandler, ...)");
+	}
 
 #if 0
 	/*

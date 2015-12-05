@@ -7,9 +7,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "sensor_cli.h"
-
-/* to do: move it into common file */
-#define GETTID() (pid_t)syscall(SYS_gettid)
+#include "sensor_common.h"
 
 static pthread_t dbg_cli_thr;
 
@@ -42,27 +40,34 @@ clicmds cmdtab[] = {
 	{ "bye", cli_exit },
 	{ "q", cli_exit },
 };
-int cmdtab_size = sizeof(cmdtab) / sizeof(cmdtab[0]);
+static int cmdtab_size = sizeof(cmdtab) / sizeof(cmdtab[0]);
 
 static int
 sens_dbgcli_handler(FILE *cliout, char *msg, int len)
 {
-	int arg;
-	if (0 == len || 2 == len) {
+	/* msg was from cli, either empty or only contains '\n\r' */
+	if (2 >= len) {
 		return 0;
 	}
 
-	/* get rid of newline and carriage return from cli */
+	/* get rid of '\n\r' */
 	msg[len - 2] = '\0';
 
 	int i;
+	/*
+	 * to do: need to figure out exact cmds' syntax and required args,
+	 * for now just use this dummy arg when calling each cmd's entry
+	 */
+	int arg;
 	for (i = 0; i < cmdtab_size; ++i) {
 		if (!strncmp(cmdtab[i].cmd, msg, len)) {
 			return cmdtab[i].func((void*)&arg);
 		}
 	}
 
+	/* cmd not found, send err msg to client */
 	fprintf(cliout, "Invalid command '%s'\n", msg);
+	/* and return success */
 	return 0;
 }
 
@@ -70,15 +75,16 @@ sens_dbgcli_handler(FILE *cliout, char *msg, int len)
 static void*
 sens_dbgcli_thr(void *arg)
 {
-	int sfd = socket(AF_INET, SOCK_STREAM, 0);
+	/* IPv4 domain, reliable full-duplex stream type, TCP protocol */
+	int sfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (-1 == sfd) {
-		perror("socket(...)");
+		perror("socket(...) error");
 		exit(1);
 	}
 
 	int ret;
 	int optval = 1;
-	/* reuse port/address */
+	/* socket level option to reuse port/address */
 	if ( setsockopt(sfd,
 			SOL_SOCKET,
 			/*
@@ -89,11 +95,11 @@ sens_dbgcli_thr(void *arg)
 			SO_REUSEADDR,
 			&optval,
 			sizeof(optval)) ) {
-		perror("setsockopt(..., SO_REUSEADDR,...)");
+		perror("setsockopt( SO_REUSEADDR ) error");
 		exit(1);
 	}
 
-	/* 10 seconds linger to allow data transfer completion */
+	/* 2 seconds linger to allow data transfer completion upon close */
 	struct linger ling;
 	memset(&ling, 0, sizeof(ling));
 	ling.l_onoff = 1;
@@ -103,7 +109,7 @@ sens_dbgcli_thr(void *arg)
 			SO_LINGER,
 			(const char *)&ling,
 			sizeof(ling)) ) {
-		perror("setsockopt(..., SO_LINGER,...)");
+		perror("setsockopt( SO_LINGER ) error");
 		exit(1);
 	}
 
@@ -114,31 +120,44 @@ sens_dbgcli_thr(void *arg)
 	srvaddr.sin_addr.s_addr = INADDR_ANY;
 	srvaddr.sin_port = htons(DBGCLIPORT);
 	if ( bind(sfd, (struct sockaddr *)&srvaddr, sizeof(srvaddr)) ) {
-		perror("bind(...)");
+		perror("bind(...) error ");
 		exit(1);
 	}
 
 	char prompt[16];
-	snprintf(prompt, sizeof(prompt), "%s", "Hello >");
+	snprintf(prompt, sizeof(prompt), "%s", "DBGCLI > ");
 	printf("CLI thread, TID: %d,  port: %d\n", GETTID(), DBGCLIPORT);
 	while (1) {
 		if ( listen(sfd, SIMULMAXCONN) ) {
-			perror("listen(...)");
+			perror("listen(...) error");
 			exit(1);
 		}
 
 		struct sockaddr_in cliaddr;
 		socklen_t clilen = sizeof(cliaddr);
 		int clih;
-		clih = accept(sfd, (struct sockaddr *)&cliaddr, &clilen);
+		clih = accept(sfd, (struct sockaddr*)&cliaddr, &clilen);
 		if (-1 == clih) {
-			perror("accept(...)");
-			exit(1);
+			switch (errno) {
+			/* for these errs, just continue and retry */
+			case EINTR:
+			case EAGAIN:
+				continue;
+				break;
+			default:
+				perror("accept(...) error");
+				exit(1);
+				break;
+			}
 		}
+		printf( "Connecting with %s:%u\n",
+			inet_ntoa(cliaddr.sin_addr),
+			(unsigned)ntohs(cliaddr.sin_port) );
+		(void)fflush(stdout);
 
 		FILE *clicon = fdopen(clih, "w+");
 		if (!clicon) {
-			perror("fdopen(clih)");
+			perror("fdopen(clih) error");
 			exit(1);
 		}
 
@@ -152,6 +171,11 @@ sens_dbgcli_thr(void *arg)
 			ret = sens_dbgcli_handler(clicon, rcvbuf, nrcv);
 			free(rcvbuf);
 			if (0 > ret) {
+				fprintf(clicon, "Exiting CLI...\n");
+				printf( "Disconnecting %s:%u\n",
+					inet_ntoa(cliaddr.sin_addr),
+					(unsigned)ntohs(cliaddr.sin_port) );
+				(void)fflush(stdout);
 				break;
 			}
 		}
@@ -171,10 +195,12 @@ dbgcli_init(void)
 			     sens_dbgcli_thr,
 			     NULL);
 	if (ret) {
-		perror("pthread_create(..., DBG CLI, ...)");
+		perror("pthread_create( DBG CLI ) error");
 		return -1;
 	}
-	(void)pthread_setname_np(dbg_cli_thr, "dbgcli");
+	if ( pthread_setname_np(dbg_cli_thr, "dbgcli") ) {
+		perror("pthread_setname_np( DBG CLI ) error");
+	}
 	return 0;
 }
 

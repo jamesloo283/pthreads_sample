@@ -4,12 +4,7 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include "sensor_worker.h"
-
-/*
- * gettid(...) isn't portable and isn't implemented on every platform
- * so unfortunately, this has to be done via syscall
- */
-#define GETTID() (pid_t)syscall(SYS_gettid)
+#include "sensor_common.h"
 
 static void *sonar_thr(void *arg);
 static void *speed_thr(void *arg);
@@ -80,12 +75,14 @@ sens_init(void) {
 				    NULL,
 				    senstab[i].func,
 				    (void*)(&senstab[i])) ) {
-			perror("pthread_create(...)\n");
+			perror("pthread_create(...)");
 			printf("Sensor thread: %d)\n", senstab[i].tnum);
 			++err;
 		} else {
-			(void)pthread_setname_np(senstab[i].t,
-						senstab[i].name);
+			if (pthread_setname_np(senstab[i].t,
+			    senstab[i].name)) {
+				perror("pthread_setname_np(sensor)");
+			}
 		}
 	}
 	return err;
