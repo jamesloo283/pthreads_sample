@@ -24,11 +24,15 @@ cli_exit(void *arg) {
 
 static int
 sen_get(void *arg) {
+	cliargs *args = (cliargs*)arg;
+	fprintf(args->fhd, "get called, args: %s\n", args->args);
 	return 0;
 }
 
 static int
 sen_set(void *arg) {
+	cliargs *args = (cliargs*)arg;
+	fprintf(args->fhd, "set called, args: %s\n", args->args);
 	return 0;
 }
 
@@ -52,21 +56,21 @@ sens_dbgcli_handler(FILE *cliout, char *msg, int len)
 
 	/* get rid of '\n\r' */
 	msg[len - 2] = '\0';
+	char delimiters[] = " ";
+	char *cmd = strtok(msg, delimiters);
+	cliargs args;
+	args.fhd = cliout;
+	args.args = strtok(NULL, "");
 
 	int i;
-	/*
-	 * to do: need to figure out exact cmds' syntax and required args,
-	 * for now just use this dummy arg when calling each cmd's entry
-	 */
-	int arg;
 	for (i = 0; i < cmdtab_size; ++i) {
-		if (!strncmp(cmdtab[i].cmd, msg, len)) {
-			return cmdtab[i].func((void*)&arg);
+		if (!strncmp(cmdtab[i].cmd, cmd, strlen(cmd))) {
+			return cmdtab[i].func((void*)&args);
 		}
 	}
 
 	/* cmd not found, send err msg to client */
-	fprintf(cliout, "Invalid command '%s'\n", msg);
+	fprintf(cliout, "Invalid command '%s'\n", cmd);
 	/* and return success */
 	return 0;
 }
@@ -172,7 +176,7 @@ sens_dbgcli_thr(void *arg)
 			free(rcvbuf);
 			if (0 > ret) {
 				fprintf(clicon, "Exiting CLI...\n");
-				printf( "Disconnecting %s:%u\n",
+				printf("Disconnecting %s:%u\n",
 					inet_ntoa(cliaddr.sin_addr),
 					(unsigned)ntohs(cliaddr.sin_port) );
 				(void)fflush(stdout);

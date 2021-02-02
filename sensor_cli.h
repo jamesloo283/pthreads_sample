@@ -8,5 +8,10 @@ typedef struct {
 	int (*func)(void*);
 } clicmds;
 
+typedef struct {
+	FILE *fhd;
+	char *args;
+} cliargs;
+
 int dbgcli_init(void);
 void dbgcli_deinit(void);

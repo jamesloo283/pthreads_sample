@@ -13,6 +13,12 @@
 #include "sensor_common.h"
 
 /*
+ * To test:
+ * * make
+ * * ./sensormgmt
+ * * telnet localhost 6000
+ * * at DBGCLI> get|set
+ *
  * multiple ways to see threads details:
  * * pstree -p `pidof sensormgmt`
  * * ps -aeT | grep sensormgmt
@@ -26,6 +32,7 @@
  * * sudo lsof -i
  * * sudo netstat -lptu
  * * sudo netstat -tulpn
+ *
  */
 
 
