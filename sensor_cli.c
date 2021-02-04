@@ -84,8 +84,13 @@ sens_dbgcli_handler(cliargs *args)
 	strncpy(worktoks, args->usrtoks, len);
 	char delimiters[] = " ";
 	char *cmd = strtok(worktoks, delimiters);
-	int i;
+	int ucmdlen = strlen(cmd);
+	int i, cmdlen;
 	for (i = 0; i < cmdtab_size; ++i) {
+		cmdlen = strlen(cmdtab[i].cmd);
+		if (ucmdlen != cmdlen) {
+			continue;
+		}
 		if (!strncmp(cmdtab[i].cmd, cmd, strlen(cmdtab[i].cmd))) {
 			break;
 		}
