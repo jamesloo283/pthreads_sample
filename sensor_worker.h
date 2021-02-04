@@ -16,7 +16,7 @@ void sens_deinit(void);
 
 typedef struct {
 	char *name;
-	pthread_t t;
+	pthread_t tid;
 	int tnum;
 	int type;
 	void* (*func)(void*);

@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
@@ -6,33 +7,54 @@
 #include <sys/syscall.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 #include "sensor_cli.h"
 #include "sensor_common.h"
+
+static int cliprocessing = 0;
+static pthread_mutex_t clilock;
 
 static pthread_t dbg_cli_thr;
 
 static void* sens_dbgcli_thr(void *arg);
-static int sens_dbgcli_handler(FILE *cliout, char *msg, int len);
-static int sen_get(void *arg);
-static int sen_set(void *arg);
-static int cli_exit(void *arg);
+static void* sens_dbgcli_processor_thr(void *arg);
+static int sens_dbgcli_handler(cliargs *args);
+static int sen_get(cliargs *arg);
+static int sen_set(cliargs *arg);
+static int cli_exit(cliargs *arg);
 
 static int
-cli_exit(void *arg) {
+cli_exit(cliargs *arg) {
 	return -1;
 }
 
 static int
-sen_get(void *arg) {
-	cliargs *args = (cliargs*)arg;
-	fprintf(args->fhd, "get called, args: %s\n", args->args);
+sen_get(cliargs *arg) {
+	if (!arg) {
+		printf("sen_get: invalid args\n");
+		return 0;
+	}
+	if (!arg->usrtoks) {
+		fprintf(arg->clicon, "sen_get: invalid args\n");
+		return 0;
+	}
+
+	fprintf(arg->clicon, "sen_get called with args: %s\n", arg->usrtoks);
 	return 0;
 }
 
 static int
-sen_set(void *arg) {
-	cliargs *args = (cliargs*)arg;
-	fprintf(args->fhd, "set called, args: %s\n", args->args);
+sen_set(cliargs *arg) {
+	if (!arg) {
+		printf("sen_set: invalid args\n");
+		return 0;
+	}
+	if (!arg->usrtoks) {
+		fprintf(arg->clicon, "sen_set: invalid args\n");
+		return 0;
+	}
+
+	fprintf(arg->clicon, "sen_set called with args: %s\n", arg->usrtoks);
 	return 0;
 }
 
@@ -47,38 +69,45 @@ clicmds cmdtab[] = {
 static int cmdtab_size = sizeof(cmdtab) / sizeof(cmdtab[0]);
 
 static int
-sens_dbgcli_handler(FILE *cliout, char *msg, int len)
+sens_dbgcli_handler(cliargs *args)
 {
-	/* msg was from cli, either empty or only contains '\n\r' */
-	if (2 >= len) {
+	int len = strlen(args->usrtoks);
+	if (0 >= len) {
 		return 0;
 	}
 
-	/* get rid of '\n\r' */
-	msg[len - 2] = '\0';
+	char *worktoks = malloc(len);
+	if (!worktoks) {
+		fprintf(args->clicon, "CLI internal error, aborting\n");
+		return 0;
+	}
+	strncpy(worktoks, args->usrtoks, len);
 	char delimiters[] = " ";
-	char *cmd = strtok(msg, delimiters);
-	cliargs args;
-	args.fhd = cliout;
-	args.args = strtok(NULL, "");
-
+	char *cmd = strtok(worktoks, delimiters);
 	int i;
 	for (i = 0; i < cmdtab_size; ++i) {
-		if (!strncmp(cmdtab[i].cmd, cmd, strlen(cmd))) {
-			return cmdtab[i].func((void*)&args);
+		if (!strncmp(cmdtab[i].cmd, cmd, strlen(cmdtab[i].cmd))) {
+			break;
 		}
 	}
-
-	/* cmd not found, send err msg to client */
-	fprintf(cliout, "Invalid command '%s'\n", cmd);
-	/* and return success */
-	return 0;
+	int ret = 0;
+	if (i == cmdtab_size) {
+		/* cmd not found, send err msg to CLI prompt */
+		fprintf(args->clicon, "Invalid command '%s'\n", cmd);
+	} else {
+		ret = cmdtab[i].func(args);
+	}
+	if (worktoks) {
+		free(worktoks);
+	}
+	return ret;
 }
 
 
 static void*
 sens_dbgcli_thr(void *arg)
 {
+	pthread_mutex_init(&clilock, NULL);
 	/* IPv4 domain, reliable full-duplex stream type, TCP protocol */
 	int sfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (-1 == sfd) {
@@ -128,19 +157,18 @@ sens_dbgcli_thr(void *arg)
 		exit(1);
 	}
 
-	char prompt[16];
-	snprintf(prompt, sizeof(prompt), "%s", "DBGCLI > ");
 	printf("CLI thread, TID: %d,  port: %d\n", GETTID(), DBGCLIPORT);
+	int clih;
+	FILE *clicon;
+	cliargs myargs;
 	while (1) {
 		if ( listen(sfd, SIMULMAXCONN) ) {
 			perror("listen(...) error");
 			exit(1);
 		}
 
-		struct sockaddr_in cliaddr;
-		socklen_t clilen = sizeof(cliaddr);
-		int clih;
-		clih = accept(sfd, (struct sockaddr*)&cliaddr, &clilen);
+		socklen_t clilen = sizeof(myargs.cliaddr);
+		clih = accept(sfd, (struct sockaddr*)&myargs.cliaddr, &clilen);
 		if (-1 == clih) {
 			switch (errno) {
 			/* for these errs, just continue and retry */
@@ -154,40 +182,112 @@ sens_dbgcli_thr(void *arg)
 				break;
 			}
 		}
-		printf( "Connecting with %s:%u\n",
-			inet_ntoa(cliaddr.sin_addr),
-			(unsigned)ntohs(cliaddr.sin_port) );
-		(void)fflush(stdout);
 
-		FILE *clicon = fdopen(clih, "w+");
-		if (!clicon) {
-			perror("fdopen(clih) error");
-			exit(1);
+		pthread_mutex_lock(&clilock);
+		if (cliprocessing == 1) {
+			clicon = fdopen(clih, "w+");
+			if (!clicon) {
+				perror("fdopen(clih) error");
+			} else {
+				fprintf(clicon, "A CLI session is already active, aborting this connection\n");
+				(void)fflush(clicon);
+				fclose(clicon);
+				close(clih);
+			}
+			pthread_mutex_unlock(&clilock);
+			continue;
 		}
+		cliprocessing = 1;
+		pthread_mutex_unlock(&clilock);
 
-		while (1) {
-			int nrcv;
-			char *rcvbuf = NULL;
-			size_t len = 0;
-			fprintf(clicon, "%s", prompt);
-			(void)fflush(clicon);
-			nrcv = getline(&rcvbuf, &len, clicon);
-			ret = sens_dbgcli_handler(clicon, rcvbuf, nrcv);
-			free(rcvbuf);
-			if (0 > ret) {
-				fprintf(clicon, "Exiting CLI...\n");
-				printf("Disconnecting %s:%u\n",
-					inet_ntoa(cliaddr.sin_addr),
-					(unsigned)ntohs(cliaddr.sin_port) );
-				(void)fflush(stdout);
-				break;
+		myargs.clih = clih;
+		printf( "Connecting with %s:%u\n",
+			inet_ntoa(myargs.cliaddr.sin_addr),
+			(unsigned)ntohs(myargs.cliaddr.sin_port) );
+		(void)fflush(stdout);
+		pthread_t cli_processor;
+		ret = pthread_create(&cli_processor,
+				     NULL,
+				     sens_dbgcli_processor_thr,
+				     (void*)&myargs);
+		if (ret) {
+			perror("pthread_create( CLI PROCESSOR ) error");
+		} else {
+			if ( pthread_setname_np(cli_processor, "cliprocessor") ) {
+				perror("pthread_setname_np( DBG CLI ) error");
 			}
 		}
-		fflush(clicon);
-		fclose(clicon);
-		close(clih);
 	}
+	pthread_mutex_destroy(&clilock);
 	pthread_exit(0);
+}
+
+static void*
+sens_dbgcli_processor_thr(void *args) {
+	cliargs *myargs = (cliargs*)args;
+	if (-1 == myargs->clih) {
+		return NULL;
+	}
+	int ret;
+	size_t alloclen, readlen;
+	char prompt[16];
+	snprintf(prompt, sizeof(prompt), "%s", "DBGCLI > ");
+
+	myargs->clicon = fdopen(myargs->clih, "w+");
+	if (!myargs->clicon) {
+		close(myargs->clih);
+		cliprocessing = 0;
+		perror("fdopen(myargs->clih) error");
+		return NULL;
+	}
+
+	while (1) {
+		ret = 0;
+		alloclen = 0;
+		readlen = 0;
+		myargs->usrtoks = NULL;
+		fprintf(myargs->clicon, "%s", prompt);
+		(void)fflush(myargs->clicon);
+
+		readlen = getline(&myargs->usrtoks, &alloclen, myargs->clicon);
+		if (0 > readlen) {
+			/* some error occured */
+			/* TODO: handle error */
+			if (myargs->usrtoks) {
+				/* Despite the error, still have to free getline allocated ptr, see doc */
+				free(myargs->usrtoks);
+			}
+			continue;
+		}
+		/* User input was empty and or only contains '\n\r' i.e: Enter pressed without anything else */
+		if (2 >= readlen) {
+			if (myargs->usrtoks) {
+				/* Still have to free getline allocated ptr, see doc */
+				free(myargs->usrtoks);
+			}
+			continue;
+		}
+
+		/* Get rid of '\n\r' by terminating with '\0' */
+		myargs->usrtoks[readlen - 2] = '\0';
+
+		ret = sens_dbgcli_handler(myargs);
+		if (myargs->usrtoks) {
+			free(myargs->usrtoks);
+		}
+		if (0 > ret) {
+			fprintf(myargs->clicon, "Exiting CLI...\n");
+			printf("Disconnecting %s:%u\n",
+				inet_ntoa(myargs->cliaddr.sin_addr),
+				(unsigned)ntohs(myargs->cliaddr.sin_port) );
+			(void)fflush(stdout);
+			break;
+		}
+	}
+	(void)fflush(myargs->clicon);
+	fclose(myargs->clicon);
+	close(myargs->clih);
+	cliprocessing = 0;
 }
 
 int
