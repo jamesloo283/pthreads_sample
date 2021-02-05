@@ -1,6 +1,7 @@
 #pragma once
 
 /* supported sensor types */
+#define	INERTIA_SENS				0x060
 #define	VISION_SENS				0x070
 #define	TOUCH_SENS				0x080
 #define	TILT_SENS				0x090

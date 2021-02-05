@@ -111,7 +111,7 @@ sighdl_multithr(void *arg)
 	sigset_t s;
 	siginfo_t sf;
 	int sig;
-	printf("Signal handler: TID: %d, PID: %d\n", GETTID(), getpid());
+	PRDEBUG("Signal handler: TID: %d, PID: %d\n", GETTID(), getpid());
 	while (1) {
 		/* include all sigs and wait on them */
 		sigfillset(&s);
@@ -123,7 +123,7 @@ sighdl_multithr(void *arg)
 				++intrsig;
 				continue;
 			} else {
-				perror("sigwaitinfo(...)");
+				PRSYSERR(errno, "Failed calling sigwaitinfo(...)");
 				++sigwaitinfo_err;
 			}
 		}
@@ -142,7 +142,7 @@ sighdl_multithr(void *arg)
 			sigusr2_hdl(sig, &sf, NULL);
 			break;
 		default:
-			printf("Miss-handled signal: %d: \n", sig);
+			PRDEBUG("Miss-handled signal: %d: \n", sig);
 			++sigmisshdl_err;
 			break;
 		}
@@ -157,7 +157,7 @@ sigs_init(void)
 	sigfillset(&allset);
 	int ret = pthread_sigmask(SIG_BLOCK, &allset, NULL);
 	if (ret) {
-		perror("pthread_sigmask(...)");
+		PRSYSERR(errno, "Failed calling pthread_sigmask(...)");
 		return -1;
 	}
 
@@ -165,11 +165,11 @@ sigs_init(void)
 	pthread_t sigh_thr;
 	ret = pthread_create(&sigh_thr, NULL, &sighdl_multithr, NULL);
 	if (ret) {
-		perror("pthread_create(..., sighandler, ...)");
+		PRSYSERR(errno, "pthread_create(..., sighandler, ...)");
 		return -1;
 	}
 	if ( pthread_setname_np(sigh_thr, "sighdl") ) {
-		perror("pthread_setname_np(..., sighandler, ...)");
+		PRSYSERR(errno, "pthread_setname_np(..., sighandler, ...)");
 	}
 
 #if 0
@@ -208,17 +208,17 @@ int
 main(int argc, char **argv)
 {
 	if (sigs_init()) {
-		printf("Failed configuring signals, terminating\n");
+		PRDEBUG("Failed configuring signals, terminating\n");
 		exit(1);
 	}
 
 	if (dbgcli_init()) {
-		printf("Failed configuring DBG CLI, terminating\n");
+		PRDEBUG("Failed configuring DBG CLI, terminating\n");
 		exit(1);
 	}
 
 	if (sens_init()) {
-		printf("WARNING: one or more sensor threads failed\n");
+		PRDEBUG("WARNING: one or more sensor threads failed\n");
 	}
 
 	/* main robotic logic */

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -18,7 +19,7 @@ static void
 {
 	sens_t *s = arg;
 	while (1) {
-		printf( "Sonar thread, idx: %d,"
+		PRDEBUG( "Sonar thread, idx: %d,"
 			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
 			(u_int32_t)s->tid,
@@ -34,7 +35,7 @@ static void
 {
 	sens_t *s = arg;
 	while (1) {
-		printf( "Speed thread, idx: %d,"
+		PRDEBUG( "Speed thread, idx: %d,"
 			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
 			(u_int32_t)s->tid,
@@ -50,7 +51,7 @@ static void
 {
 	sens_t *s = arg;
 	while (1) {
-		printf( "IR thread, idx: %d,"
+		PRDEBUG( "IR thread, idx: %d,"
 			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
 			(u_int32_t)s->tid,
@@ -62,11 +63,27 @@ static void
 }
 
 static void
+*inertia_thr(void *arg)
+{
+	sens_t *s = arg;
+	while (1) {
+		PRDEBUG( "Inertia thread, idx: %d,"
+			"T: %u, TID: %d, PID: %d\n",
+			s->tnum,
+			(u_int32_t)s->tid,
+			GETTID(),
+			getpid() );
+		sleep(10);
+	}
+	pthread_exit(0);
+}
+
+static void
 *gps_thr(void *arg)
 {
 	sens_t *s = arg;
 	while (1) {
-		printf( "GPS thread, idx: %d,"
+		PRDEBUG( "GPS thread, idx: %d,"
 			"T: %u, TID: %d, PID: %d\n",
 			s->tnum,
 			(u_int32_t)s->tid,
@@ -87,6 +104,7 @@ sens_t senstab[] = {
 	{ "Speed_sens", 0xDEADBEEF, 1, SPEED_SENS, speed_thr },
 	{ "IR_sens", 0xDEADBEEF, 2, IR_SENS, ir_thr },
 	{ "GPS_sens", 0xDEADBEEF, 3, GPS_SENS, gps_thr },
+	{ "Inertia_sens", 0xDEADBEEF, 4, INERTIA_SENS, inertia_thr },
 };
 int senscount = sizeof(senstab) / sizeof(senstab[0]);
 
@@ -99,13 +117,13 @@ sens_init(void) {
 				    NULL,
 				    senstab[i].func,
 				    (void*)(&senstab[i])) ) {
-			perror("pthread_create(...)");
-			printf("Sensor thread: %d)\n", senstab[i].tnum);
+			PRSYSERR(errno, "Failed calling pthread_create(%s)", senstab[i].func);
+			PRDEBUG("Sensor thread: %d)\n", senstab[i].tnum);
 			++err;
 		} else {
 			if (pthread_setname_np(senstab[i].tid,
 			    senstab[i].name)) {
-				perror("pthread_setname_np(sensor)");
+				PRSYSERR(errno, "Failed calling pthread_setname_np(%s)", senstab[i].name);
 			}
 		}
 	}
@@ -119,6 +137,6 @@ sens_deinit(void) {
 	for (i = 0; i < senscount; ++i) {
 		pthread_cancel(senstab[i].tid);
 		pthread_join(senstab[i].tid, &ret);
-		printf("Sensor thread %d exit\n", senstab[i].tnum);
+		PRDEBUG("Sensor thread %d exit\n", senstab[i].tnum);
 	}
 }
