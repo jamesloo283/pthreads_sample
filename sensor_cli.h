@@ -1,11 +1,13 @@
 #pragma once
 #include <arpa/inet.h>
 
+/* CLI inactivity timer in seconds */
+#define CLIINACTIVITYSEC	120
 #define DBGCLIPORT		6000
 #define SIMULMAXCONN		1
 
 typedef struct {
-	int clih;
+	int clisockh;
 	FILE *clicon;
 	char *usrtoks;
 	struct sockaddr_in cliaddr;

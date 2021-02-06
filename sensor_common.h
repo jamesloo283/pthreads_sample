@@ -15,3 +15,4 @@ void LOGGER(char *r);
 void PRDEBUG(char *fmt, ...);
 void PRSYSERR(int err, char *fmt, ...);
 void PRCLI(FILE *fhd, char *fmt, ...);
+void PRCLIPRETTY(FILE *fhd, char *fmt, ...);
