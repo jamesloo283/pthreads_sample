@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
 #include <sys/socket.h>
@@ -50,14 +51,9 @@ sen_status(cliargs *arg) {
 
 static int
 sen_get(cliargs *arg) {
-	if (!arg) {
-		PRDEBUG("sen_get: invalid args\n");
-		return 1;
-	}
-	if (!arg->usrtoks) {
-		PRCLI(arg->clicon, "Invalid arguments\n");
-		return 1;
-	}
+	assert(arg);
+	assert(arg->usrtoks);
+
 	PRCLIPRETTY(arg->clicon, "sen_get called with args: %s\n", arg->usrtoks);
 
 	sonar_data_t sensdata;
@@ -70,14 +66,8 @@ sen_get(cliargs *arg) {
 
 static int
 sen_set(cliargs *arg) {
-	if (!arg) {
-		PRDEBUG("sen_set: invalid args\n");
-		return 1;
-	}
-	if (!arg->usrtoks) {
-		PRCLI(arg->clicon, "Invalid arguments\n");
-		return 0;
-	}
+	assert(arg);
+	assert(arg->usrtoks);
 	PRCLIPRETTY(arg->clicon, "sen_set called with args: %s\n", arg->usrtoks);
 	return 0;
 }
@@ -94,9 +84,10 @@ clicmds cmdtab[] = {
 static int cmdtab_size = sizeof(cmdtab) / sizeof(cmdtab[0]);
 
 static int
-dbgcli_handler(cliargs *args)
+dbgcli_handler(cliargs *arg)
 {
-	int len = strlen(args->usrtoks);
+	assert(arg);
+	int len = strlen(arg->usrtoks);
 	if (0 >= len) {
 		/* Empty user input is OK, just return 0 */
 		return 0;
@@ -104,11 +95,11 @@ dbgcli_handler(cliargs *args)
 
 	char *worktoks = malloc(len);
 	if (!worktoks) {
-		PRCLI(args->clicon, "CLI internal error, aborting\n");
+		PRCLI(arg->clicon, "CLI internal error, aborting\n");
 		return 1;
 	}
 
-	memcpy(worktoks, args->usrtoks, len);
+	memcpy(worktoks, arg->usrtoks, len);
 	char delimiters[] = " ";
 	char *cmd = strtok(worktoks, delimiters);
 	int ucmdlen = strlen(cmd);
@@ -125,9 +116,9 @@ dbgcli_handler(cliargs *args)
 	int ret = 0;
 	if (i == cmdtab_size) {
 		/* cmd not found, send err msg to CLI prompt */
-		PRCLI(args->clicon, "Invalid command: '%s'\n", cmd);
+		PRCLI(arg->clicon, "Invalid command: '%s'\n", cmd);
 	} else {
-		ret = cmdtab[i].func(args);
+		ret = cmdtab[i].func(arg);
 	}
 	if (worktoks) {
 		free(worktoks);
@@ -267,10 +258,10 @@ done:
 
 static void* dbgcli_timer_thr(void *arg)
 {
+	assert(arg);
+	cliargs *uarg = arg;
 	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-	cliargs *uarg = (cliargs*)arg;
 	struct timespec ts;
-	struct timeval tv;
 	int ret = 0;
 
 	pthread_mutex_lock(&clitimerlock);
@@ -312,10 +303,11 @@ static void* dbgcli_timer_thr(void *arg)
 }
 
 static void*
-dbgcli_processor_thr(void *args) {
+dbgcli_processor_thr(void *arg) {
+	assert(arg);
+	cliargs *uarg = arg;
 	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-	cliargs *myargs = (cliargs*)args;
-	if (-1 == myargs->clisockh) {
+	if (-1 == uarg->clisockh) {
 		PRDEBUG("Invalid CLI connection handle\n");
 		pthread_exit(0);
 	}
@@ -324,8 +316,8 @@ dbgcli_processor_thr(void *args) {
 	char prompt[16];
 	snprintf(prompt, sizeof(prompt), "%s", "DBGCLI > ");
 
-	myargs->clicon = fdopen(myargs->clisockh, "w+");
-	if (!myargs->clicon) {
+	uarg->clicon = fdopen(uarg->clisockh, "w+");
+	if (!uarg->clicon) {
 		PRSYSERR(errno, "Failed opening CLI connection prompt");
 		goto done;
 	}
@@ -334,20 +326,21 @@ dbgcli_processor_thr(void *args) {
 		ret = 0;
 		alloclen = 0;
 		readlen = 0;
-		myargs->usrtoks = NULL;
+		uarg->usrtoks = NULL;
 
-		PRCLI(myargs->clicon, "%s", prompt);
+		PRCLI(uarg->clicon, "%s", prompt);
 
-		readlen = getline(&myargs->usrtoks, &alloclen, myargs->clicon);
+		readlen = getline(&uarg->usrtoks, &alloclen, uarg->clicon);
 
 		if (-1 == readlen) {
 			PRSYSERR(errno, "Failed reading from CLI prompt, exiting\n");
-			if (myargs->usrtoks) {
+			if (uarg->usrtoks) {
 				/* Despite the error, still have to free getline allocated ptr, see doc */
-				free(myargs->usrtoks);
+				free(uarg->usrtoks);
 			}
 			break;
 		}
+		assert(uarg->usrtoks);
 
 		pthread_mutex_lock(&clitimerlock);
 		pthread_cond_signal(&cliactive);
@@ -355,29 +348,27 @@ dbgcli_processor_thr(void *args) {
 
 		/* User input was empty and or only contains '\n\r' i.e: Enter pressed without anything else */
 		if (2 >= readlen) {
-			if (myargs->usrtoks) {
-				/* Still have to free getline allocated ptr, see doc */
-				free(myargs->usrtoks);
-			}
+			/* Still have to free getline allocated ptr, see doc */
+			free(uarg->usrtoks);
 			continue;
 		}
 
 		/* Get rid of '\n\r' by terminating with '\0' */
-		myargs->usrtoks[readlen - 2] = '\0';
-		ret = dbgcli_handler(myargs);
-		free(myargs->usrtoks);
+		uarg->usrtoks[readlen - 2] = '\0';
+		ret = dbgcli_handler(uarg);
+		free(uarg->usrtoks);
 
 		if (0 > ret) {
-			PRCLI(myargs->clicon, "Exiting CLI\n");
+			PRCLI(uarg->clicon, "Exiting CLI\n");
 			PRDEBUG("Disconnecting %s:%u\n",
-				inet_ntoa(myargs->cliaddr.sin_addr),
-				(unsigned)ntohs(myargs->cliaddr.sin_port) );
+				inet_ntoa(uarg->cliaddr.sin_addr),
+				(unsigned)ntohs(uarg->cliaddr.sin_port) );
 			break;
 		}
 	}
-	fclose(myargs->clicon);
+	fclose(uarg->clicon);
 done:
-	close(myargs->clisockh);
+	close(uarg->clisockh);
 	cliprocessing = 0;
 	pthread_mutex_lock(&clitimerlock);
 	pthread_cond_signal(&cliactive);

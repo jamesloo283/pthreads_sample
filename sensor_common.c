@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <assert.h>
 #include <pthread.h>
 #include "sensor_common.h"
 
@@ -48,6 +49,7 @@ void PRSYSERR(int err, char *fmt, ...)
 
 void PRCLI(FILE *fhd, char *fmt, ...)
 {
+	assert(fhd);
 	flockfile(fhd);
 	va_list ap;
 	va_start(ap, fmt);
