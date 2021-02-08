@@ -222,6 +222,9 @@ dbgcli_thr(void *arg)
 				PRSYSERR(errno, "Failed opening CLI connection prompt");
 			} else {
 				PRCLI(clicon, "A CLI session is already active, aborting\n");
+				PRDEBUG( "Rejected CLI connection attempt from %s:%u\n",
+					inet_ntoa(myargs.cliaddr.sin_addr),
+					(unsigned)ntohs(myargs.cliaddr.sin_port) );
 				fclose(clicon);
 			}
 			close(clih);
@@ -268,16 +271,23 @@ static void* dbgcli_timer_thr(void *arg)
 	cliargs *uarg = (cliargs*)arg;
 	struct timespec ts;
 	struct timeval tv;
-	int ret;
+	int ret = 0;
 
 	pthread_mutex_lock(&clitimerlock);
-	while (cliprocessing) {
-		(void)gettimeofday(&tv, NULL);
-		ts.tv_nsec = tv.tv_usec * 1000;
-		ts.tv_sec = tv.tv_sec;
+	while (cliprocessing && ret == 0) {
+		(void)clock_gettime(CLOCK_REALTIME, &ts);
 		ts.tv_sec += CLIINACTIVITYSEC;
 		ret = pthread_cond_timedwait(&cliactive, &clitimerlock, &ts);
-		if (ret == ETIMEDOUT) {
+
+		if (0 == ret) {
+			if (cliprocessing) {
+				PRDEBUG("CLI activity update detected, reseting timer\n");
+				continue;
+			}
+			break;
+		}
+
+		if (ETIMEDOUT == ret) {
 			if (cliprocessing) {
 				PRDEBUG("CLI inactivity timedout, cancelling CLI processor thread\n");
 				pthread_cancel(cliprocessor_tid);
@@ -295,7 +305,6 @@ static void* dbgcli_timer_thr(void *arg)
 			}
 			break;
 		}
-		PRDEBUG("CLI activity update detected, reseting timer\n");
 	}
 	pthread_mutex_unlock(&clitimerlock);
 	PRDEBUG("CLI processing completed\n");
@@ -331,18 +340,19 @@ dbgcli_processor_thr(void *args) {
 
 		readlen = getline(&myargs->usrtoks, &alloclen, myargs->clicon);
 
-		pthread_mutex_lock(&clitimerlock);
-		pthread_cond_signal(&cliactive);
-		pthread_mutex_unlock(&clitimerlock);
-
-		if (0 > readlen) {
-			/* some error occured, TODO: handle error */
+		if (-1 == readlen) {
+			PRSYSERR(errno, "Failed reading from CLI prompt, exiting\n");
 			if (myargs->usrtoks) {
 				/* Despite the error, still have to free getline allocated ptr, see doc */
 				free(myargs->usrtoks);
 			}
-			continue;
+			break;
 		}
+
+		pthread_mutex_lock(&clitimerlock);
+		pthread_cond_signal(&cliactive);
+		pthread_mutex_unlock(&clitimerlock);
+
 		/* User input was empty and or only contains '\n\r' i.e: Enter pressed without anything else */
 		if (2 >= readlen) {
 			if (myargs->usrtoks) {
@@ -351,23 +361,18 @@ dbgcli_processor_thr(void *args) {
 			}
 			continue;
 		}
+
 		/* Get rid of '\n\r' by terminating with '\0' */
 		myargs->usrtoks[readlen - 2] = '\0';
-
 		ret = dbgcli_handler(myargs);
+		free(myargs->usrtoks);
 
-		if (myargs->usrtoks) {
-			free(myargs->usrtoks);
-		}
 		if (0 > ret) {
 			PRCLI(myargs->clicon, "Exiting CLI\n");
 			PRDEBUG("Disconnecting %s:%u\n",
 				inet_ntoa(myargs->cliaddr.sin_addr),
 				(unsigned)ntohs(myargs->cliaddr.sin_port) );
 			break;
-		}
-		if (ret > 0) {
-			/* Some error. TODO, handle error */
 		}
 	}
 	fclose(myargs->clicon);
@@ -408,7 +413,6 @@ dbgcli_deinit(void)
 	pthread_join(dbgcli_tid, &ret);
 	pthread_join(clitimer_tid, &ret);
 	pthread_join(cliprocessor_tid, &ret);
-
 	pthread_cond_destroy(&cliactive);
 	pthread_mutex_destroy(&clitimerlock);
 	pthread_mutex_destroy(&clilock);

@@ -128,6 +128,8 @@ sighdl_multithr(void *arg)
 			}
 		}
 
+		PRDEBUG("Signal detected, code: %d\n", sig);
+
 		switch (sig) {
 		case SIGTERM:	/* terminate */
 		case SIGHUP:	/* hang up */
@@ -157,7 +159,7 @@ sigs_init(void)
 	sigfillset(&allset);
 	int ret = pthread_sigmask(SIG_BLOCK, &allset, NULL);
 	if (ret) {
-		PRSYSERR(errno, "Failed calling pthread_sigmask(...)");
+		PRSYSERR(errno, "Failed setting signal masks");
 		return -1;
 	}
 
@@ -165,11 +167,11 @@ sigs_init(void)
 	pthread_t sigh_thr;
 	ret = pthread_create(&sigh_thr, NULL, &sighdl_multithr, NULL);
 	if (ret) {
-		PRSYSERR(errno, "pthread_create(..., sighandler, ...)");
+		PRSYSERR(errno, "Failed creating signal handler thread");
 		return -1;
 	}
 	if ( pthread_setname_np(sigh_thr, "sighdl") ) {
-		PRSYSERR(errno, "pthread_setname_np(..., sighandler, ...)");
+		PRSYSERR(errno, "Failed setting signal handler thread name");
 	}
 
 #if 0

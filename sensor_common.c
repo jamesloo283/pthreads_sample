@@ -36,7 +36,7 @@ void PRSYSERR(int err, char *fmt, ...)
 	char logrecord[MAXLOGRECORDLEN] = {0};
 	char *errstr = strerror(err);
 	va_start(ap, fmt);
-	snprintf(logrecord, sizeof(logrecord), "SYSERR: %d-%s, %s", err, errstr, fmt);
+	snprintf(logrecord, sizeof(logrecord), "SYSERR: %d(%s). %s", err, errstr, fmt);
 #ifdef DEBUGIT
 	vprintf(logrecord, ap);
 	(void)fflush(stdout);

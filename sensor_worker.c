@@ -217,7 +217,8 @@ static void
 	while (1) {
 #ifdef SIMULATE
 		/* Randomly simulate sonar distances for testing */
-		srand( (unsigned)time(&t) );
+		u_int32_t seedp = (unsigned)time(&t);
+		rand_r(&seedp);
 		/* Up to 10ft/304cm */
 		sdata->distance_in = (u_int32_t)(rand() % 120);
 		sdata->distance_cm = (u_int32_t)(sdata->distance_in * 2.54);
@@ -225,7 +226,7 @@ static void
 		/* TO DO: sonar sensor actual read */
 #endif
 		/* About 20ms frequency, assuming sonar can be read about 50 times per second */
-		usleep(200000);
+		usleep(20000);
 		/* For debug, wait up to 5s (20ms x 250) for debug output */
 		/* These are for simulation/debug only. Actual number should be used for real devices */
 		if (wait == 0 || wait == 250) {
@@ -270,7 +271,8 @@ static void
 	while (1) {
 #ifdef SIMULATE
 		/* Randomly simulate ir distances for testing */
-		srand( (unsigned)time(&t) );
+		u_int32_t seedp = (unsigned)time(&t);
+		rand_r(&seedp);
 		/* Up to 10ft/304cm */
 		irdata->distance_in = (u_int32_t)(rand() % 120);
 		irdata->distance_cm = (u_int32_t)(irdata->distance_in * 2.54);
@@ -278,7 +280,7 @@ static void
 		/* TO DO: ir sensor actual read */
 #endif
 		/* About 10ms frequency, assuming ir can be read about 100 times per second */
-		usleep(100000);
+		usleep(10000);
 		/* For debug, wait up to 7s (10ms x 700) for debug output */
 		/* These are for simulation/debug only. Actual number should be used for real devices */
 		if (wait == 0 || wait == 700) {
@@ -306,14 +308,15 @@ static void
 	while (1) {
 #ifdef SIMULATE
 		/* Randomly simulate ir distances for testing */
-		srand( (unsigned)time(&t) );
+		u_int32_t seedp = (unsigned)time(&t);
+		rand_r(&seedp);
 		/* 0 to 360 degrees */
 		inertia_data->tilt = (int32_t)(rand() % 360);
 #else
 		/* TO DO: inertia sensor actual read */
 #endif
 		/* About 10ms frequency, assuming inertia can be read about 100 times per second */
-		usleep(100000);
+		usleep(10000);
 		/* For debug, wait up to 4s (10ms x 400) for debug output */
 		/* These are for simulation/debug only. Actual number should be used for real devices */
 		if (wait == 0 || wait == 400) {
